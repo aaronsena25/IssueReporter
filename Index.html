@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Local Issue Reporter</title>
+  <link rel="stylesheet" href="styles.css" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+</head>
+<body>
+  <h1>Report a Local Issue</h1>
+  <form id="reportForm">
+    <label for="title">Title:</label>
+    <input type="text" id="title" required />
+
+    <label for="description">Description:</label>
+    <textarea id="description" required></textarea>
+
+    <label for="image">Photo:</label>
+    <input type="file" id="image" accept="image/*" required />
+
+    <label for="lat">Latitude:</label>
+    <input type="text" id="lat" readonly required />
+
+    <label for="lng">Longitude:</label>
+    <input type="text" id="lng" readonly required />
+
+    <button type="submit">Submit Issue</button>
+  </form>
+
+  <h2>Reported Issues</h2>
+  <div id="issuesList"></div>
+
+  <div id="map" style="height: 400px;"></div>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-database-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-storage-compat.js"></script>
+  <script src="firebase-config.js"></script>
+  <script>
+    const reportForm = document.getElementById('reportForm');
+    const latInput = document.getElementById('lat');
+    const lngInput = document.getElementById('lng');
+    const issuesList = document.getElementById('issuesList');
+
+    const map = L.map('map').setView([0, 0], 13);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: '&copy; OpenStreetMap contributors'
+    }).addTo(map);
+
+    navigator.geolocation.getCurrentPosition(position => {
+      const lat = position.coords.latitude;
+      const lng = position.coords.longitude;
+      map.setView([lat, lng], 15);
+      latInput.value = lat;
+      lngInput.value = lng;
+    });
+
+    reportForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+
+      const title = document.getElementById('title').value;
+      const description = document.getElementById('description').value;
+      const imageFile = document.getElementById('image').files[0];
+      const lat = latInput.value;
+      const lng = lngInput.value;
+
+      const imageRef = storage.ref('issues/' + imageFile.name);
+      await imageRef.put(imageFile);
+      const imageUrl = await imageRef.getDownloadURL();
+
+      const issueRef = database.ref('issues').push();
+      const issueData = {
+        title,
+        description,
+        imageUrl,
+        lat,
+        lng,
+        timestamp: Date.now()
+      };
+      await issueRef.set(issueData);
+
+      alert('Issue submitted successfully!');
+      reportForm.reset();
+      latInput.value = lat;
+      lngInput.value = lng;
+    });
+
+    // Load and display existing issues on map and list
+    database.ref('issues').on('value', snapshot => {
+      issuesList.innerHTML = '';
+      map.eachLayer(layer => {
+        if (layer instanceof L.Marker) map.removeLayer(layer);
+      });
+
+      snapshot.forEach(childSnapshot => {
+        const issue = childSnapshot.val();
+
+        // Add to list
+        const div = document.createElement('div');
+        div.className = 'issue';
+        div.innerHTML = `
+          <h3>${issue.title}</h3>
+          <p>${issue.description}</p>
+          <img src="${issue.imageUrl}" alt="Issue Image" style="max-width:200px;">
+          <small>Location: (${issue.lat}, ${issue.lng})</small>
+          <hr>
+        `;
+        issuesList.appendChild(div);
+
+        // Add marker to map
+        const marker = L.marker([issue.lat, issue.lng]).addTo(map);
+        marker.bindPopup(`<strong>${issue.title}</strong><br>${issue.description}`);
+      });
+    });
+  </script>
+</body>
+</html>
